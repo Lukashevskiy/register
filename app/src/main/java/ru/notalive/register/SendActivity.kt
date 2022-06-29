@@ -7,6 +7,7 @@ import android.os.Bundle
 import android.util.Log
 import com.google.gson.annotations.SerializedName
 import okhttp3.OkHttpClient
+import org.json.JSONObject
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -24,18 +25,17 @@ class SendActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivitySendBinding.inflate(layoutInflater)
         setContentView(binding.root)
-        val url = intent.getStringExtra("barcodeData")
-        binding.text.text = url
-        binding.send.setOnClickListener {
-            sendData()
-        }
+        val id = intent.getStringExtra("barcodeDataUid")
+        val token = intent.getStringExtra("barcodeDataToken")
+        binding.uid.text = id
+        binding.token.text = token
     }
 
     private fun sendData(){
         val apiService = RestApiService()
-        val userInfo = UserInfo(binding.text.text as String?)
+        val userInfo = UserInfo(binding.uid.text as String, binding.token.text as String)
         apiService.addUser(userInfo){
-            if(it?.barcodeData != null){
+            if(it?.uid != null){
 
             }else{
                 Log.d("mmm", "Fail to send")
@@ -45,7 +45,8 @@ class SendActivity : AppCompatActivity() {
 }
 
 data class UserInfo(
-    @SerializedName("barcodeData") val barcodeData: String?
+    @SerializedName("uid") val uid: String,
+    @SerializedName("token") val token: String
 )
 
 

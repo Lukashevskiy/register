@@ -6,18 +6,26 @@ import android.content.ContentValues.TAG
 import android.content.Intent
 import android.content.pm.ModuleInfo
 import android.content.pm.PackageManager
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.Rect
 import androidx.appcompat.app.AppCompatActivity
 import android.os.Bundle
 import android.util.Log
 import android.util.Size
+import android.view.MotionEvent
+import android.view.View
 import android.widget.Toast
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import com.google.gson.Gson
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
@@ -25,6 +33,10 @@ import com.google.mlkit.vision.common.InputImage
 import ru.notalive.register.databinding.ActivityScanningBinding
 import ru.notalive.register.databinding.ActivitySendBinding
 import java.lang.Exception
+
+
+
+data class QrCode(val uid: Int, val token: String)
 
 class ScanningActivity : AppCompatActivity() {
     lateinit var viewCamera: PreviewView;
@@ -45,9 +57,8 @@ class ScanningActivity : AppCompatActivity() {
         }
 
         imageAnalysis = ImageAnalysis.Builder()
-            // enable the following line if RGBA output is needed.
-            // .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-            .setTargetResolution(Size(1280, 720))
+
+            .setTargetResolution(Size(viewCamera.width, viewCamera.height))
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .build()
 
@@ -64,38 +75,48 @@ class ScanningActivity : AppCompatActivity() {
             // insert your code here.
             val img = imageProxy.image
             if(img != null){
+                var uid = " "
+                var token = " "
+                var url = " "
                 val result = scanner.process(InputImage.fromMediaImage(img, rotationDegrees))
                     .addOnSuccessListener { barcodes ->
-                        var url = ""
                         for (barcode in barcodes) {
                             val bounds = barcode.boundingBox
                             val corners = barcode.cornerPoints
 
                             val rawValue = barcode.rawValue
 
-                            val valueType = barcode.valueType
+                            val gson = Gson()
                             // See API reference for complete list of supported types
-                            when (valueType) {
-                                Barcode.TYPE_URL -> {
-                                    val title = barcode.url!!.title
-                                    url = barcode.url!!.url.toString()
-                                }
+                            try {
+                                val data = gson.fromJson(rawValue, QrCode::class.java)
+
+                                url = data.toString()
+                                uid = data.uid.toString()
+                                token = data.token
+                                setResult(1)
+                                Log.d("fuck", "${imageProxy.height} x ${imageProxy.width}")
+                            } catch ( exc: Exception){
+                                setResult(-1)
                             }
 
                         }
-                        Toast.makeText(this, url, Toast.LENGTH_LONG).show()
-
-                        val i = Intent(this@ScanningActivity, SendActivity::class.java)
-                        i.putExtra("barcodeData", url)
-                        startActivity(i)
 
                     }
-
+                if(result.isSuccessful){
+                    Log.d("fuck", "${imageProxy.height} x ${imageProxy.width}")
+                    Toast.makeText(this, url, Toast.LENGTH_LONG).show()
+                    val i = Intent(this@ScanningActivity, SendActivity::class.java)
+                    i.putExtra("barcodeDataUid", uid)
+                    i.putExtra("barcodeDataToken", token)
+                    startActivity(i)
+                }
             }
 
             // after done, release the ImageProxy object
             imageProxy.close()
         })
+
     }
 
     override fun onRequestPermissionsResult(
@@ -124,6 +145,7 @@ class ScanningActivity : AppCompatActivity() {
     }
 
 
+    @SuppressLint("ClickableViewAccessibility")
     private fun startCamera(){
         val cameraProviderFuture = ProcessCameraProvider.getInstance(this)
         cameraProviderFuture.addListener({
@@ -137,20 +159,52 @@ class ScanningActivity : AppCompatActivity() {
                 }
 
 
+
             val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
 
             try{
                 cameraProvider.unbindAll()
 
-                cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis, preView) // todo задать для распознования лайфцикл сюда
+                val camera = cameraProvider.bindToLifecycle(this, cameraSelector, imageAnalysis, preView) // todo задать для распознования лайфцикл сюда
+                viewCamera.setOnTouchListener(View.OnTouchListener { view: View, motionEvent: MotionEvent ->
+                    when (motionEvent.action) {
+                        MotionEvent.ACTION_DOWN -> return@OnTouchListener true
+                        MotionEvent.ACTION_UP -> {
+                            // Get the MeteringPointFactory from PreviewView
+                            val factory = viewCamera.meteringPointFactory
+
+                            // Create a MeteringPoint from the tap coordinates
+                            val point = factory.createPoint(motionEvent.x, motionEvent.y)
+
+                            // Create a MeteringAction from the MeteringPoint, you can configure it to specify the metering mode
+                            val action = FocusMeteringAction.Builder(point).build()
+
+                            // Trigger the focus and metering. The method returns a ListenableFuture since the operation
+                            // is asynchronous. You can use it get notified when the focus is successful or if it fails.
+                            camera.cameraControl.startFocusAndMetering(action)
+
+                            return@OnTouchListener true
+                        }
+                        else -> return@OnTouchListener false
+                    }
+                })
+
             } catch (exc: Exception){
                 Log.e(TAG, "Failed", exc)
             }
 
         }, ContextCompat.getMainExecutor(this))
+
     }
 
     private fun start_recognize(){
 
+    }
+
+    private fun draw_rect(canvas: Canvas, rect:Rect){
+        val paint = Paint()
+        paint.color = Color.BLACK
+        paint.style = Paint.Style.STROKE
+        canvas.drawRect(rect, paint)
     }
 }
